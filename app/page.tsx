@@ -11,6 +11,7 @@ const Home = () => {
       fontFamily: 'sans-serif'
     }}>
       Hello Gourmet Map!
+      テスト
     </div>
   );
 };
