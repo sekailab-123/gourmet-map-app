@@ -5,7 +5,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import Papa from 'papaparse';
 
-// データの型定義（写真を追加）
+// 型定義にtiktok_embedを追加
 type Shop = {
   id: string;
   name_ja: string;
@@ -14,7 +14,8 @@ type Shop = {
   category: string;
   price_min: string;
   price_max: string;
-  photo_url: string; // ★追加
+  photo_url: string;
+  tiktok_embed: string; // ★追加
 };
 
 export default function Home() {
@@ -26,6 +27,23 @@ export default function Home() {
 
   useEffect(() => {
     setIsClient(true);
+
+    // ★追加: ポップアップ内のボタンから呼び出される関数をグローバルに定義
+    // (Reactの管理外にあるポップアップのHTMLから操作するための裏技です)
+    (window as any).loadTikTok = (shopId: string) => {
+      const container = document.getElementById(`tiktok-container-${shopId}`);
+      const embedCodeInput = document.getElementById(`tiktok-embed-code-${shopId}`) as HTMLInputElement;
+      
+      if (container && embedCodeInput && embedCodeInput.value) {
+        // ボタンをTikTokの埋め込みコードに置き換える
+        container.innerHTML = embedCodeInput.value;
+        // TikTokのスクリプトを再実行して動画を表示させる
+        const script = document.createElement('script');
+        script.src = 'https://www.tiktok.com/embed.js';
+        script.async = true;
+        document.body.appendChild(script);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -53,6 +71,9 @@ export default function Home() {
     Papa.parse('/shops.csv', {
       download: true,
       header: true,
+      // ★重要: CSVの特殊な文字を正しく読み込む設定
+      quoteChar: '"', 
+      escapeChar: '"',
       complete: (results) => {
         const data = results.data as Shop[];
         const validData = data.filter(shop => shop.lat && shop.lng);
@@ -75,27 +96,40 @@ export default function Home() {
     });
 
     filteredShops.forEach((shop) => {
-      // ★変更: ポップアップの中身をリッチなHTMLにする
+      // ★変更: TikTokがある場合とない場合で表示を分ける
+      let tiktokSection = '';
+      if (shop.tiktok_embed) {
+        // TikTokがある場合は「動画を見る」ボタンを表示
+        // 実際の埋め込みコードは隠しデータ(input hidden)として持っておく
+        tiktokSection = `
+          <div id="tiktok-container-${shop.id}" style="margin-top: 10px;">
+            <input type="hidden" id="tiktok-embed-code-${shop.id}" value="${shop.tiktok_embed.replace(/"/g, '&quot;')}" />
+            <button onclick="window.loadTikTok('${shop.id}')" style="width: 100%; padding: 8px 0; background: #FE2C55; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+              🎵 動画を見る (TikTok)
+            </button>
+          </div>
+        `;
+      }
+
       const popupContent = `
-        <div style="text-align: left; max-width: 200px;">
+        <div style="text-align: left; max-width: 220px;">
           <img src="${shop.photo_url}" alt="${shop.name_ja}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 4px; margin-bottom: 8px;">
           <h3 style="margin: 0; font-size: 16px; font-weight: bold;">${shop.name_ja}</h3>
           <p style="margin: 4px 0 0; font-size: 13px; color: #666;">
             🏷 ${shop.category}<br>
             💰 ¥${shop.price_min}~
           </p>
-        </div>
+          ${tiktokSection} </div>
       `;
 
       new maplibregl.Marker({ color: "#FF0000" })
         .setLngLat([parseFloat(shop.lng), parseFloat(shop.lat)])
-        .setPopup(new maplibregl.Popup({ maxWidth: '220px' }).setHTML(popupContent)) // 写真付きHTMLをセット
+        .setPopup(new maplibregl.Popup({ maxWidth: '240px' }).setHTML(popupContent))
         .addTo(map.current!);
     });
 
   }, [allShops, selectedCategory]);
 
-  // ★エラー対策: 読み込み中の表示をW3の時と同じスタイルに戻しました
   if (!isClient) {
     return <div style={{ width: '100%', height: '100vh', background: '#f0f0f0' }} />;
   }
