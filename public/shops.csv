@@ -1,4 +1,4 @@
-id,name_ja,lat,lng,category,price_min,price_max,photo_url,tiktok_url
-1,東京ラーメンストリート,35.6805,139.7673,ラーメン,800,1200,https://images.unsplash.com/photo-1591293965448-10467e914138?auto=format&fit=crop&w=400&q=80,https://www.tiktok.com/@f4_michelin/video/7499408548548414721
-2,丸の内オアゾ,35.6834,139.7651,カフェ,500,1500,https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=400&q=80,
-3,KITTE丸の内,35.6796,139.7649,レストラン,2000,5000,https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=400&q=80,
+id,name_ja,name_en,lat,lng,category,category_en,price_min,price_max,photo_url,tiktok_url
+1,東京ラーメンストリート,Tokyo Ramen Street,35.6805,139.7673,ラーメン,Ramen,800,1200,https://images.unsplash.com/photo-1591293965448-10467e914138?auto=format&fit=crop&w=400&q=80,https://www.tiktok.com/@tiktokjapan/video/7142716084792478978
+2,丸の内オアゾ,Marunouchi OAZO,35.6834,139.7651,カフェ,Cafe,500,1500,https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=400&q=80,
+3,KITTE丸の内,KITTE Marunouchi,35.6796,139.7649,レストラン,Restaurant,2000,5000,https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=400&q=80,
