@@ -5,7 +5,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import Papa from 'papaparse';
 
-// データの型定義を更新（カテゴリと予算を追加）
+// データの型定義（写真を追加）
 type Shop = {
   id: string;
   name_ja: string;
@@ -14,24 +14,20 @@ type Shop = {
   category: string;
   price_min: string;
   price_max: string;
+  photo_url: string; // ★追加
 };
 
 export default function Home() {
   const mapContainer = useRef(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [isClient, setIsClient] = useState(false);
-  
-  // ★追加: 全データと、絞り込み後のデータを管理
   const [allShops, setAllShops] = useState<Shop[]>([]);
-  
-  // ★追加: 絞り込み条件（カテゴリ）
   const [selectedCategory, setSelectedCategory] = useState('すべて');
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // 1. 地図の初期化とデータ読み込み
   useEffect(() => {
     if (!isClient || map.current) return;
 
@@ -54,63 +50,61 @@ export default function Home() {
       'top-right'
     );
 
-    // CSV読み込み
     Papa.parse('/shops.csv', {
       download: true,
       header: true,
       complete: (results) => {
         const data = results.data as Shop[];
-        // 有効なデータだけを保存
         const validData = data.filter(shop => shop.lat && shop.lng);
-        setAllShops(validData); // ここで全データを保存
+        setAllShops(validData);
       }
     });
   }, [isClient]);
 
-  // 2. 絞り込み条件が変わったら、ピンを立て直す
   useEffect(() => {
     if (!map.current || allShops.length === 0) return;
 
-    // いったん今あるマーカーを全削除（簡易的な方法としてDOM要素を削除）
     const markers = document.getElementsByClassName('maplibregl-marker');
     while (markers.length > 0) {
       markers[0].remove();
     }
 
-    // 条件に合うお店だけを探す
     const filteredShops = allShops.filter(shop => {
       if (selectedCategory === 'すべて') return true;
       return shop.category === selectedCategory;
     });
 
-    // 絞り込んだお店だけピンを立てる
     filteredShops.forEach((shop) => {
+      // ★変更: ポップアップの中身をリッチなHTMLにする
+      const popupContent = `
+        <div style="text-align: left; max-width: 200px;">
+          <img src="${shop.photo_url}" alt="${shop.name_ja}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 4px; margin-bottom: 8px;">
+          <h3 style="margin: 0; font-size: 16px; font-weight: bold;">${shop.name_ja}</h3>
+          <p style="margin: 4px 0 0; font-size: 13px; color: #666;">
+            🏷 ${shop.category}<br>
+            💰 ¥${shop.price_min}~
+          </p>
+        </div>
+      `;
+
       new maplibregl.Marker({ color: "#FF0000" })
         .setLngLat([parseFloat(shop.lng), parseFloat(shop.lat)])
-        .setPopup(
-          new maplibregl.Popup().setHTML(
-            `<b>${shop.name_ja}</b><br>ジャンル: ${shop.category}<br>予算: ¥${shop.price_min}~`
-          )
-        )
+        .setPopup(new maplibregl.Popup({ maxWidth: '220px' }).setHTML(popupContent)) // 写真付きHTMLをセット
         .addTo(map.current!);
     });
 
-  }, [allShops, selectedCategory]); // データかカテゴリが変わるたびに実行
+  }, [allShops, selectedCategory]);
 
-  if (!isClient) return <div />;
+  // ★エラー対策: 読み込み中の表示をW3の時と同じスタイルに戻しました
+  if (!isClient) {
+    return <div style={{ width: '100%', height: '100vh', background: '#f0f0f0' }} />;
+  }
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
-      
-      {/* ★追加: 地図の上に浮かぶ絞り込みボタン */}
       <div style={{
-        position: 'absolute', 
-        top: '20px', 
-        left: '20px', 
-        zIndex: 10, 
-        background: 'white', 
-        padding: '10px', 
-        borderRadius: '8px',
+        position: 'absolute', top: '20px', left: '20px', zIndex: 10, 
+        background: 'white', padding: '10px', borderRadius: '8px',
         boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
       }}>
         <label style={{ fontWeight: 'bold', marginRight: '5px' }}>カテゴリ:</label>
@@ -125,7 +119,6 @@ export default function Home() {
           <option value="レストラン">レストラン</option>
         </select>
       </div>
-
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
     </div>
   );
