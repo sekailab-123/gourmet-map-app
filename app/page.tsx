@@ -5,7 +5,6 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import Papa from 'papaparse';
 
-// 型定義にtiktok_embedを追加
 type Shop = {
   id: string;
   name_ja: string;
@@ -15,7 +14,7 @@ type Shop = {
   price_min: string;
   price_max: string;
   photo_url: string;
-  tiktok_embed: string; // ★追加
+  tiktok_url: string; // ★変更: embedではなくurlを受け取る
 };
 
 export default function Home() {
@@ -28,21 +27,30 @@ export default function Home() {
   useEffect(() => {
     setIsClient(true);
 
-    // ★追加: ポップアップ内のボタンから呼び出される関数をグローバルに定義
-    // (Reactの管理外にあるポップアップのHTMLから操作するための裏技です)
-    (window as any).loadTikTok = (shopId: string) => {
+    // ★変更: URLから自動で埋め込みコードを生成して表示する関数
+    (window as any).loadTikTok = (shopId: string, videoUrl: string) => {
       const container = document.getElementById(`tiktok-container-${shopId}`);
-      const embedCodeInput = document.getElementById(`tiktok-embed-code-${shopId}`) as HTMLInputElement;
-      
-      if (container && embedCodeInput && embedCodeInput.value) {
-        // ボタンをTikTokの埋め込みコードに置き換える
-        container.innerHTML = embedCodeInput.value;
-        // TikTokのスクリプトを再実行して動画を表示させる
-        const script = document.createElement('script');
-        script.src = 'https://www.tiktok.com/embed.js';
-        script.async = true;
-        document.body.appendChild(script);
-      }
+      if (!container || !videoUrl) return;
+
+      // URLから動画IDを抽出 (例: .../video/12345... -> 12345...)
+      const videoIdMatch = videoUrl.match(/video\/(\d+)/);
+      if (!videoIdMatch) return;
+      const videoId = videoIdMatch[1];
+
+      // 自動で正しい埋め込みコードを作成
+      const embedCode = `
+        <blockquote class="tiktok-embed" cite="${videoUrl}" data-video-id="${videoId}" style="max-width: 605px;min-width: 325px;">
+          <section></section>
+        </blockquote>
+      `;
+
+      container.innerHTML = embedCode;
+
+      // スクリプトを読み込んで再生
+      const script = document.createElement('script');
+      script.src = 'https://www.tiktok.com/embed.js';
+      script.async = true;
+      document.body.appendChild(script);
     };
   }, []);
 
@@ -71,9 +79,7 @@ export default function Home() {
     Papa.parse('/shops.csv', {
       download: true,
       header: true,
-      // ★重要: CSVの特殊な文字を正しく読み込む設定
-      quoteChar: '"', 
-      escapeChar: '"',
+      skipEmptyLines: true, // 空行を無視
       complete: (results) => {
         const data = results.data as Shop[];
         const validData = data.filter(shop => shop.lat && shop.lng);
@@ -96,15 +102,12 @@ export default function Home() {
     });
 
     filteredShops.forEach((shop) => {
-      // ★変更: TikTokがある場合とない場合で表示を分ける
       let tiktokSection = '';
-      if (shop.tiktok_embed) {
-        // TikTokがある場合は「動画を見る」ボタンを表示
-        // 実際の埋め込みコードは隠しデータ(input hidden)として持っておく
+      if (shop.tiktok_url) {
+        // ★変更: URLを渡すだけのシンプルなボタン
         tiktokSection = `
           <div id="tiktok-container-${shop.id}" style="margin-top: 10px;">
-            <input type="hidden" id="tiktok-embed-code-${shop.id}" value="${shop.tiktok_embed.replace(/"/g, '&quot;')}" />
-            <button onclick="window.loadTikTok('${shop.id}')" style="width: 100%; padding: 8px 0; background: #FE2C55; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+            <button onclick="window.loadTikTok('${shop.id}', '${shop.tiktok_url}')" style="width: 100%; padding: 8px 0; background: #FE2C55; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
               🎵 動画を見る (TikTok)
             </button>
           </div>
@@ -119,7 +122,8 @@ export default function Home() {
             🏷 ${shop.category}<br>
             💰 ¥${shop.price_min}~
           </p>
-          ${tiktokSection} </div>
+          ${tiktokSection}
+        </div>
       `;
 
       new maplibregl.Marker({ color: "#FF0000" })
@@ -130,9 +134,7 @@ export default function Home() {
 
   }, [allShops, selectedCategory]);
 
-  if (!isClient) {
-    return <div style={{ width: '100%', height: '100vh', background: '#f0f0f0' }} />;
-  }
+  if (!isClient) return <div style={{ width: '100%', height: '100vh', background: '#f0f0f0' }} />;
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>

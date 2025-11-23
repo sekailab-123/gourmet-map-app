@@ -1,4 +1,4 @@
-id,name_ja,lat,lng,category,price_min,price_max,photo_url,tiktok_embed
-1,東京ラーメンストリート,35.6805,139.7673,ラーメン,800,1200,https://images.unsplash.com/photo-1591293965448-10467e914138?auto=format&fit=crop&w=400&q=80,"<blockquote class='tiktok-embed' cite='https://www.tiktok.com/@tiktok/video/7315276947645238561' data-video-id='7315276947645238561' style='max-width: 605px;min-width: 325px;' > <section> <a target='_blank' title='@tiktok' href='https://www.tiktok.com/@tiktok?refer=embed'>@tiktok</a> Check out this delicious ramen! #ramen #tokyo </section> </blockquote> <script async src='https://www.tiktok.com/embed.js'></script>"
+id,name_ja,lat,lng,category,price_min,price_max,photo_url,tiktok_url
+1,東京ラーメンストリート,35.6805,139.7673,ラーメン,800,1200,https://images.unsplash.com/photo-1591293965448-10467e914138?auto=format&fit=crop&w=400&q=80,https://www.tiktok.com/@f4_michelin/video/7499408548548414721
 2,丸の内オアゾ,35.6834,139.7651,カフェ,500,1500,https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=400&q=80,
 3,KITTE丸の内,35.6796,139.7649,レストラン,2000,5000,https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=400&q=80,
