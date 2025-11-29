@@ -3,14 +3,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import Papa from 'papaparse';
+import { createDirectus, rest, authentication, readMe, readItems, createItem, login, logout } from '@directus/sdk';
+
+// --- 設定 ---
+const DIRECTUS_URL = 'http://127.0.0.1:8055';
+const client = createDirectus(DIRECTUS_URL)
+  .with(authentication('json'))
+  .with(rest());
 
 type Shop = {
   id: string;
   name_ja: string;
   name_en: string;
-  lat: string;
-  lng: string;
+  lat: number; // 数値
+  lng: number; // 数値
   category: string;
   category_en: string;
   price_min: string;
@@ -24,199 +30,288 @@ export default function Home() {
   const map = useRef<maplibregl.Map | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [allShops, setAllShops] = useState<Shop[]>([]);
+  const [mapLoaded, setMapLoaded] = useState(false); // ★地図の準備完了フラグ
   
+  // フィルタリング用
   const [selectedCategory, setSelectedCategory] = useState('すべて');
   const [language, setLanguage] = useState<'ja' | 'en'>('ja');
   const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
   const [showOnlyBookmarks, setShowOnlyBookmarks] = useState(false);
+  
+  // ユーザー
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [email, setEmail] = useState('admin@example.com');
+  const [password, setPassword] = useState('password');
 
+  // --- 1. 初期化 & データ取得 ---
   useEffect(() => {
     setIsClient(true);
+    const saved = localStorage.getItem('gourmet-map-bookmarks');
+    if (saved) setBookmarkedIds(JSON.parse(saved));
 
-    const savedBookmarks = localStorage.getItem('gourmet-map-bookmarks');
-    if (savedBookmarks) {
-      setBookmarkedIds(JSON.parse(savedBookmarks));
-    }
+    client.request(readMe()).then(user => {
+        setCurrentUser(user);
+        fetchRemoteBookmarks();
+    }).catch(() => {});
 
-    (window as any).loadTikTok = (shopId: string, videoUrl: string) => {
-      const container = document.getElementById(`tiktok-container-${shopId}`);
-      if (!container || !videoUrl) return;
-      const videoIdMatch = videoUrl.match(/video\/(\d+)/);
-      if (!videoIdMatch) return;
-      const videoId = videoIdMatch[1];
-      const embedCode = `<blockquote class="tiktok-embed" cite="${videoUrl}" data-video-id="${videoId}" style="max-width: 605px;min-width: 325px;"><section></section></blockquote>`;
-      container.innerHTML = embedCode;
-      const script = document.createElement('script');
-      script.src = 'https://www.tiktok.com/embed.js';
-      script.async = true;
-      document.body.appendChild(script);
-    };
-
-    // ★変更: 押した瞬間に色を変える処理を追加
-    (window as any).toggleBookmark = (shopId: string) => {
-      // 1. まず見た目を即座に変える (Reactの再レンダリングを待たない)
-      const btn = document.getElementById(`bookmark-btn-${shopId}`);
-      if (btn) {
-        // 現在の色を見て、反転させる
-        const currentColor = btn.style.color;
-        // もし今が金色(保存済)ならグレーに、グレーなら金色に
-        // (注: ブラウザによって色の表現が違うことがあるので、簡易判定)
-        const isActive = currentColor === 'rgb(255, 215, 0)' || currentColor === '#FFD700';
-        
-        btn.style.color = isActive ? '#ccc' : '#FFD700';
-        btn.innerHTML = isActive ? '☆' : '★';
-      }
-
-      // 2. その後、裏側のデータを更新する
-      setBookmarkedIds((prev) => {
-        let newBookmarks;
-        if (prev.includes(shopId)) {
-          newBookmarks = prev.filter(id => id !== shopId);
-        } else {
-          newBookmarks = [...prev, shopId];
-        }
-        localStorage.setItem('gourmet-map-bookmarks', JSON.stringify(newBookmarks));
-        return newBookmarks;
-      });
-    };
-
+    fetchShopsFromDirectus();
   }, []);
 
+  const fetchShopsFromDirectus = async () => {
+    try {
+      console.log("Fetching shops...");
+      const result = await client.request(readItems('restaurants', {
+        fields: ['*', 'photo', { categories: ['categories_id.*'] }]
+      }));
+
+      const shops: Shop[] = result.map((item: any) => {
+        const categoryData = item.categories?.[0]?.categories_id;
+        return {
+            id: item.id,
+            name_ja: item.name_ja,
+            name_en: item.name_en || item.name_ja,
+            lat: parseFloat(item.lat),
+            lng: parseFloat(item.lng),
+            category: categoryData?.name_ja || 'その他',
+            category_en: categoryData?.name_en || 'Other',
+            price_min: String(item.price_min || 0),
+            price_max: String(item.price_max || 0),
+            photo_url: item.photo ? `${DIRECTUS_URL}/assets/${item.photo}` : '',
+            tiktok_url: item.tiktok_url || ''
+        };
+      });
+
+      // ★ダミー生成コードを削除しました！
+      // 純粋にDirectusから来たデータだけをセットします
+      console.log("Data Loaded. Count:", shops.length);
+      setAllShops(shops);
+
+    } catch (e) { console.error(e); }
+  };
+
+  // --- 2. 地図の初期化 (1回だけ実行) ---
   useEffect(() => {
     if (!isClient || map.current) return;
-
     const apiKey = process.env.NEXT_PUBLIC_MAPTILER_KEY;
     if (!apiKey) return;
 
+    console.log("Initializing Map...");
     map.current = new maplibregl.Map({
       container: mapContainer.current!,
       style: `https://api.maptiler.com/maps/streets/style.json?key=${apiKey}`,
       center: [139.767, 35.681],
-      zoom: 15
+      zoom: 13
     });
 
     map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
-    map.current.addControl(
-      new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }),
-      'top-right'
-    );
+    map.current.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'top-right');
 
-    Papa.parse('/shops.csv', {
-      download: true,
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const data = results.data as Shop[];
-        const validData = data.filter(shop => shop.lat && shop.lng);
-        setAllShops(validData);
-      }
+    // 地図の準備ができたらフラグをON
+    map.current.on('load', () => {
+        console.log("Map Loaded!");
+        setMapLoaded(true);
     });
+
+    // カーソル制御
+    const setCursor = (type: string) => { if(map.current) map.current.getCanvas().style.cursor = type; };
+    map.current.on('mouseenter', 'clusters', () => setCursor('pointer'));
+    map.current.on('mouseleave', 'clusters', () => setCursor(''));
+    map.current.on('mouseenter', 'unclustered-point', () => setCursor('pointer'));
+    map.current.on('mouseleave', 'unclustered-point', () => setCursor(''));
+
+    // クリックイベント (クラスタ)
+    map.current.on('click', 'clusters', async (e) => {
+        const features = map.current?.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+        const clusterId = features?.[0].properties.cluster_id;
+        const source: any = map.current?.getSource('shops');
+        const zoom = await source.getClusterExpansionZoom(clusterId);
+        map.current?.easeTo({ center: (features?.[0].geometry as any).coordinates, zoom });
+    });
+
+    // クリックイベント (ピン)
+    map.current.on('click', 'unclustered-point', (e) => {
+        const props = e.features?.[0].properties;
+        const coordinates = (e.features?.[0].geometry as any).coordinates.slice();
+        showPopup(coordinates, props);
+    });
+
   }, [isClient]);
 
+  // --- 3. データの流し込み (データか地図が変わるたびに実行) ---
   useEffect(() => {
-    if (!map.current || allShops.length === 0) return;
+    // 地図準備OK、かつデータがある場合のみ実行
+    if (!map.current || !mapLoaded) return;
 
-    // マーカー更新時にポップアップが開いていたら閉じないように工夫するのは難しいので、
-    // ここでは「データが変わったらマーカーを作り直す」という基本動作のままにします。
-    // ただし、toggleBookmarkでの即時DOM操作により、ユーザーは違和感を感じにくくなります。
+    console.log("Updating Layers with:", allShops.length, "items");
 
-    const markers = document.getElementsByClassName('maplibregl-marker');
-    while (markers.length > 0) {
-      markers[0].remove();
-    }
-
+    // フィルタリング
     const filteredShops = allShops.filter(shop => {
-      if (selectedCategory !== 'すべて' && shop.category !== selectedCategory) return false;
-      if (showOnlyBookmarks && !bookmarkedIds.includes(shop.id)) return false;
-      return true;
+        if (selectedCategory !== 'すべて' && shop.category !== selectedCategory) return false;
+        if (showOnlyBookmarks && !bookmarkedIds.includes(shop.id)) return false;
+        return true;
     });
 
-    filteredShops.forEach((shop) => {
+    const geojson: any = {
+        type: 'FeatureCollection',
+        features: filteredShops.map(shop => ({
+            type: 'Feature',
+            properties: { ...shop },
+            geometry: { type: 'Point', coordinates: [shop.lng, shop.lat] }
+        }))
+    };
+
+    // ソースの追加・更新
+    const source = map.current.getSource('shops');
+    if (source) {
+        // すでにある場合はデータだけ差し替え (これが高速化の秘訣！)
+        (source as any).setData(geojson);
+    } else {
+        // 初回追加
+        map.current.addSource('shops', {
+            type: 'geojson',
+            data: geojson,
+            cluster: true,
+            clusterMaxZoom: 14,
+            clusterRadius: 50
+        });
+
+        // 1. クラスタ円
+        map.current.addLayer({
+            id: 'clusters',
+            type: 'circle',
+            source: 'shops',
+            filter: ['has', 'point_count'],
+            paint: {
+                'circle-color': ['step', ['get', 'point_count'], '#51bbd6', 100, '#f1f075', 750, '#f28cb1'],
+                'circle-radius': ['step', ['get', 'point_count'], 20, 100, 30, 750, 40]
+            }
+        });
+
+        // 2. クラスタ数字
+        map.current.addLayer({
+            id: 'cluster-count',
+            type: 'symbol',
+            source: 'shops',
+            filter: ['has', 'point_count'],
+            layout: {
+                'text-field': '{point_count_abbreviated}',
+                'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+                'text-size': 12
+            }
+        });
+
+        // 3. 個別ピン
+        map.current.addLayer({
+            id: 'unclustered-point',
+            type: 'circle',
+            source: 'shops',
+            filter: ['!', ['has', 'point_count']],
+            paint: {
+                'circle-color': '#FF0000',
+                'circle-radius': 8,
+                'circle-stroke-width': 1,
+                'circle-stroke-color': '#fff'
+            }
+        });
+    }
+
+  }, [mapLoaded, allShops, selectedCategory, showOnlyBookmarks, bookmarkedIds]); // 依存配列を正確に設定
+
+  // --- 補助関数 ---
+  const showPopup = (coordinates: [number, number], shop: any) => {
+      // (ポップアップ表示ロジックは以前と同じなので省略せず記述)
       const displayName = language === 'en' ? (shop.name_en || shop.name_ja) : shop.name_ja;
       const displayCategory = language === 'en' ? (shop.category_en || shop.category) : shop.category;
-      const labelPrice = language === 'en' ? 'Budget' : '予算';
-      const labelVideo = language === 'en' ? '🎵 Watch Video (TikTok)' : '🎵 動画を見る (TikTok)';
-      
       const isBookmarked = bookmarkedIds.includes(shop.id);
       const bookmarkIcon = isBookmarked ? '★' : '☆';
       const bookmarkColor = isBookmarked ? '#FFD700' : '#ccc'; 
-
-      let tiktokSection = '';
-      if (shop.tiktok_url) {
-        tiktokSection = `
-          <div id="tiktok-container-${shop.id}" style="margin-top: 10px;">
-            <button onclick="window.loadTikTok('${shop.id}', '${shop.tiktok_url}')" style="width: 100%; padding: 8px 0; background: #FE2C55; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
-              ${labelVideo}
-            </button>
-          </div>
-        `;
-      }
-
+      
       const popupContent = `
         <div style="text-align: left; max-width: 220px;">
-          <img src="${shop.photo_url}" alt="${displayName}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 4px; margin-bottom: 8px;">
-          
+          ${shop.photo_url ? `<img src="${shop.photo_url}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 4px; margin-bottom: 8px;">` : ''}
           <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 4px;">
             <h3 style="margin: 0; font-size: 16px; font-weight: bold; width: 80%;">${displayName}</h3>
-            
-            <button id="bookmark-btn-${shop.id}" onclick="window.toggleBookmark('${shop.id}')" style="background: none; border: none; cursor: pointer; font-size: 20px; color: ${bookmarkColor}; padding: 0;">
-              ${bookmarkIcon}
-            </button>
+            <button id="bookmark-btn-${shop.id}" onclick="window.toggleBookmark('${shop.id}')" style="background: none; border: none; cursor: pointer; font-size: 20px; color: ${bookmarkColor}; padding: 0;">${bookmarkIcon}</button>
           </div>
-
-          <p style="margin: 4px 0 0; font-size: 13px; color: #666;">
-            🏷 ${displayCategory}<br>
-            💰 ${labelPrice}: ¥${shop.price_min}~
-          </p>
-          ${tiktokSection}
+          <p style="margin: 4px 0 0; font-size: 13px; color: #666;">🏷 ${displayCategory}</p>
+          ${shop.tiktok_url ? `<div id="tiktok-container-${shop.id}" style="margin-top: 10px;"><button onclick="window.loadTikTok('${shop.id}', '${shop.tiktok_url}')" style="width: 100%; padding: 8px 0; background: #FE2C55; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">🎵 Video</button></div>` : ''}
         </div>
       `;
+      new maplibregl.Popup({ maxWidth: '240px' }).setLngLat(coordinates).setHTML(popupContent).addTo(map.current!);
+  };
 
-      new maplibregl.Marker({ color: "#FF0000" })
-        .setLngLat([parseFloat(shop.lng), parseFloat(shop.lat)])
-        .setPopup(new maplibregl.Popup({ maxWidth: '240px' }).setHTML(popupContent))
-        .addTo(map.current!);
-    });
+  const handleLogin = async () => {
+    try { await client.request(login(email, password)); const user = await client.request(readMe()); setCurrentUser(user); await fetchRemoteBookmarks(); alert('ログイン成功！'); } catch (e) { alert('ログイン失敗'); }
+  };
+  const handleLogout = async () => { try { await client.request(logout()); setCurrentUser(null); setBookmarkedIds([]); localStorage.removeItem('gourmet-map-bookmarks'); alert('ログアウトしました'); } catch(e) {} };
+  const fetchRemoteBookmarks = async () => { try { const result = await client.request(readItems('bookmarks', { fields: ['restaurant_id'], filter: { user_created: { _eq: '$CURRENT_USER' } } })); const ids = result.map((item: any) => item.restaurant_id); if (ids.length > 0) { setBookmarkedIds(ids); localStorage.setItem('gourmet-map-bookmarks', JSON.stringify(ids)); } } catch (e) {} };
 
-  }, [allShops, selectedCategory, language, bookmarkedIds, showOnlyBookmarks]); 
+  // グローバル関数
+  useEffect(() => {
+    if (!isClient) return;
+    (window as any).toggleBookmark = async (shopId: string) => {
+        const btn = document.getElementById(`bookmark-btn-${shopId}`);
+        if (btn) {
+            const isActive = btn.innerHTML === '★';
+            btn.style.color = isActive ? '#ccc' : '#FFD700';
+            btn.innerHTML = isActive ? '☆' : '★';
+        }
+        setBookmarkedIds(prev => {
+            const exists = prev.includes(shopId);
+            const newBookmarks = exists ? prev.filter(id => id !== shopId) : [...prev, shopId];
+            localStorage.setItem('gourmet-map-bookmarks', JSON.stringify(newBookmarks));
+            if (currentUser && !exists) client.request(createItem('bookmarks', { restaurant_id: shopId })).catch(() => {});
+            return newBookmarks;
+        });
+    };
+    (window as any).loadTikTok = (shopId: string, videoUrl: string) => {
+        const container = document.getElementById(`tiktok-container-${shopId}`);
+        if (!container || !videoUrl) return;
+        const videoIdMatch = videoUrl.match(/video\/(\d+)/);
+        if (videoIdMatch) {
+            container.innerHTML = `<blockquote class="tiktok-embed" cite="${videoUrl}" data-video-id="${videoIdMatch[1]}" style="max-width: 605px;min-width: 325px;"><section></section></blockquote>`;
+            const script = document.createElement('script');
+            script.src = 'https://www.tiktok.com/embed.js';
+            script.async = true;
+            document.body.appendChild(script);
+        }
+    };
+  }, [isClient, currentUser]);
 
-  if (!isClient) return <div style={{ width: '100%', height: '100vh', background: '#f0f0f0' }} />;
+  if (!isClient) return <div style={{width:'100vw', height:'100vh', background:'#f0f0f0'}}></div>;
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
-      <div style={{
-        position: 'absolute', top: '20px', left: '20px', zIndex: 10, 
-        background: 'white', padding: '10px', borderRadius: '8px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-        display: 'flex', flexDirection: 'column', gap: '10px'
-      }}>
-        
+      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: 'white', padding: 10 }}>
+        {/* コントロールパネル (W9と同じ) */}
+        <div style={{ paddingBottom: '10px', borderBottom: '1px solid #eee' }}>
+          {currentUser ? (
+            <div style={{fontSize: '12px'}}>
+              <p style={{margin: '0 0 5px'}}>👤 {currentUser.email}</p>
+              <button onClick={handleLogout} style={{width: '100%', padding: '5px', background: '#eee', border: 'none', borderRadius: '4px'}}>ログアウト</button>
+            </div>
+          ) : (
+            <div style={{display: 'flex', flexDirection: 'column', gap: '5px'}}>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" style={{padding: '5px'}} />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Pass" style={{padding: '5px'}} />
+              <button onClick={handleLogin} style={{padding: '5px', background: '#333', color: 'white', border: 'none', borderRadius: '4px'}}>ログイン</button>
+            </div>
+          )}
+        </div>
         <div style={{ display: 'flex', border: '1px solid #ccc', borderRadius: '4px', overflow: 'hidden' }}>
           <button onClick={() => setLanguage('ja')} style={{ flex: 1, padding: '5px', background: language === 'ja' ? '#333' : '#fff', color: language === 'ja' ? '#fff' : '#333', border: 'none', cursor: 'pointer' }}>JA</button>
           <button onClick={() => setLanguage('en')} style={{ flex: 1, padding: '5px', background: language === 'en' ? '#333' : '#fff', color: language === 'en' ? '#fff' : '#333', border: 'none', cursor: 'pointer' }}>EN</button>
         </div>
-
-        <select 
-          value={selectedCategory} 
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          style={{ padding: '5px', fontSize: '14px', width: '100%' }}
-        >
+        <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} style={{ padding: '5px', fontSize: '14px', width: '100%' }}>
           <option value="すべて">{language === 'en' ? 'All Categories' : 'すべてのカテゴリ'}</option>
           <option value="ラーメン">Ramen (ラーメン)</option>
           <option value="カフェ">Cafe (カフェ)</option>
           <option value="レストラン">Restaurant (レストラン)</option>
         </select>
-
         <label style={{ display: 'flex', alignItems: 'center', fontSize: '14px', cursor: 'pointer' }}>
-          <input 
-            type="checkbox" 
-            checked={showOnlyBookmarks}
-            onChange={(e) => setShowOnlyBookmarks(e.target.checked)}
-            style={{ marginRight: '5px' }}
-          />
+          <input type="checkbox" checked={showOnlyBookmarks} onChange={(e) => setShowOnlyBookmarks(e.target.checked)} style={{ marginRight: '5px' }} />
           {language === 'en' ? 'Saved only ★' : '保存済みのみ ★'}
         </label>
-
       </div>
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
     </div>
