@@ -3,20 +3,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { createDirectus, rest, authentication, readMe, readItems, createItem, login, logout } from '@directus/sdk';
+import { createDirectus, rest, authentication, readMe, readItems, createItem, logout } from '@directus/sdk';
 
-// --- 設定 ---
+// 設定
 const DIRECTUS_URL = 'http://127.0.0.1:8055';
 const client = createDirectus(DIRECTUS_URL)
-  .with(authentication('json'))
+  .with(authentication('json')) // JSONモード
   .with(rest());
 
 type Shop = {
   id: string;
   name_ja: string;
   name_en: string;
-  lat: number; // 数値
-  lng: number; // 数値
+  lat: number;
+  lng: number;
   category: string;
   category_en: string;
   price_min: string;
@@ -30,20 +30,18 @@ export default function Home() {
   const map = useRef<maplibregl.Map | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [allShops, setAllShops] = useState<Shop[]>([]);
-  const [mapLoaded, setMapLoaded] = useState(false); // ★地図の準備完了フラグ
+  const [mapLoaded, setMapLoaded] = useState(false);
   
-  // フィルタリング用
   const [selectedCategory, setSelectedCategory] = useState('すべて');
   const [language, setLanguage] = useState<'ja' | 'en'>('ja');
   const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
   const [showOnlyBookmarks, setShowOnlyBookmarks] = useState(false);
   
-  // ユーザー
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [email, setEmail] = useState('admin@example.com');
   const [password, setPassword] = useState('password');
 
-  // --- 1. 初期化 & データ取得 ---
+  // --- 1. 初期化 ---
   useEffect(() => {
     setIsClient(true);
     const saved = localStorage.getItem('gourmet-map-bookmarks');
@@ -80,46 +78,35 @@ export default function Home() {
             tiktok_url: item.tiktok_url || ''
         };
       });
-
-      // ★ダミー生成コードを削除しました！
-      // 純粋にDirectusから来たデータだけをセットします
+      // ダミーは削除済み
       console.log("Data Loaded. Count:", shops.length);
       setAllShops(shops);
-
     } catch (e) { console.error(e); }
   };
 
-  // --- 2. 地図の初期化 (1回だけ実行) ---
+  // --- 2. 地図初期化 ---
   useEffect(() => {
     if (!isClient || map.current) return;
     const apiKey = process.env.NEXT_PUBLIC_MAPTILER_KEY;
     if (!apiKey) return;
 
-    console.log("Initializing Map...");
     map.current = new maplibregl.Map({
       container: mapContainer.current!,
       style: `https://api.maptiler.com/maps/streets/style.json?key=${apiKey}`,
       center: [139.767, 35.681],
       zoom: 13
     });
-
     map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
     map.current.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'top-right');
 
-    // 地図の準備ができたらフラグをON
-    map.current.on('load', () => {
-        console.log("Map Loaded!");
-        setMapLoaded(true);
-    });
+    map.current.on('load', () => setMapLoaded(true));
 
-    // カーソル制御
     const setCursor = (type: string) => { if(map.current) map.current.getCanvas().style.cursor = type; };
     map.current.on('mouseenter', 'clusters', () => setCursor('pointer'));
     map.current.on('mouseleave', 'clusters', () => setCursor(''));
     map.current.on('mouseenter', 'unclustered-point', () => setCursor('pointer'));
     map.current.on('mouseleave', 'unclustered-point', () => setCursor(''));
 
-    // クリックイベント (クラスタ)
     map.current.on('click', 'clusters', async (e) => {
         const features = map.current?.queryRenderedFeatures(e.point, { layers: ['clusters'] });
         const clusterId = features?.[0].properties.cluster_id;
@@ -128,23 +115,17 @@ export default function Home() {
         map.current?.easeTo({ center: (features?.[0].geometry as any).coordinates, zoom });
     });
 
-    // クリックイベント (ピン)
     map.current.on('click', 'unclustered-point', (e) => {
         const props = e.features?.[0].properties;
         const coordinates = (e.features?.[0].geometry as any).coordinates.slice();
         showPopup(coordinates, props);
     });
-
   }, [isClient]);
 
-  // --- 3. データの流し込み (データか地図が変わるたびに実行) ---
+  // --- 3. データ反映 ---
   useEffect(() => {
-    // 地図準備OK、かつデータがある場合のみ実行
     if (!map.current || !mapLoaded) return;
 
-    console.log("Updating Layers with:", allShops.length, "items");
-
-    // フィルタリング
     const filteredShops = allShops.filter(shop => {
         if (selectedCategory !== 'すべて' && shop.category !== selectedCategory) return false;
         if (showOnlyBookmarks && !bookmarkedIds.includes(shop.id)) return false;
@@ -160,13 +141,10 @@ export default function Home() {
         }))
     };
 
-    // ソースの追加・更新
     const source = map.current.getSource('shops');
     if (source) {
-        // すでにある場合はデータだけ差し替え (これが高速化の秘訣！)
         (source as any).setData(geojson);
     } else {
-        // 初回追加
         map.current.addSource('shops', {
             type: 'geojson',
             data: geojson,
@@ -174,8 +152,6 @@ export default function Home() {
             clusterMaxZoom: 14,
             clusterRadius: 50
         });
-
-        // 1. クラスタ円
         map.current.addLayer({
             id: 'clusters',
             type: 'circle',
@@ -186,8 +162,6 @@ export default function Home() {
                 'circle-radius': ['step', ['get', 'point_count'], 20, 100, 30, 750, 40]
             }
         });
-
-        // 2. クラスタ数字
         map.current.addLayer({
             id: 'cluster-count',
             type: 'symbol',
@@ -199,8 +173,6 @@ export default function Home() {
                 'text-size': 12
             }
         });
-
-        // 3. 個別ピン
         map.current.addLayer({
             id: 'unclustered-point',
             type: 'circle',
@@ -214,12 +186,10 @@ export default function Home() {
             }
         });
     }
+  }, [mapLoaded, allShops, selectedCategory, showOnlyBookmarks, bookmarkedIds]);
 
-  }, [mapLoaded, allShops, selectedCategory, showOnlyBookmarks, bookmarkedIds]); // 依存配列を正確に設定
-
-  // --- 補助関数 ---
+  // --- 4. ポップアップ ---
   const showPopup = (coordinates: [number, number], shop: any) => {
-      // (ポップアップ表示ロジックは以前と同じなので省略せず記述)
       const displayName = language === 'en' ? (shop.name_en || shop.name_ja) : shop.name_ja;
       const displayCategory = language === 'en' ? (shop.category_en || shop.category) : shop.category;
       const isBookmarked = bookmarkedIds.includes(shop.id);
@@ -240,13 +210,38 @@ export default function Home() {
       new maplibregl.Popup({ maxWidth: '240px' }).setLngLat(coordinates).setHTML(popupContent).addTo(map.current!);
   };
 
+  // --- 5. ログイン (★修正: 手動ログインに戻しました) ---
   const handleLogin = async () => {
-    try { await client.request(login(email, password)); const user = await client.request(readMe()); setCurrentUser(user); await fetchRemoteBookmarks(); alert('ログイン成功！'); } catch (e) { alert('ログイン失敗'); }
+    try {
+      // DirectusのログインAPIを直接叩く
+      const response = await fetch(`${DIRECTUS_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await response.json();
+      
+      if (data.errors) throw new Error(data.errors[0].message);
+
+      // トークンをSDKにセット
+      await client.setToken(data.data.access_token);
+      
+      const user = await client.request(readMe());
+      setCurrentUser(user);
+      await fetchRemoteBookmarks();
+      alert('ログイン成功！');
+    } catch (e: any) {
+      console.error(e);
+      alert('ログイン失敗');
+    }
   };
-  const handleLogout = async () => { try { await client.request(logout()); setCurrentUser(null); setBookmarkedIds([]); localStorage.removeItem('gourmet-map-bookmarks'); alert('ログアウトしました'); } catch(e) {} };
+
+  const handleLogout = async () => {
+    try { await client.request(logout()); setCurrentUser(null); setBookmarkedIds([]); localStorage.removeItem('gourmet-map-bookmarks'); alert('ログアウトしました'); } catch(e) {}
+  };
   const fetchRemoteBookmarks = async () => { try { const result = await client.request(readItems('bookmarks', { fields: ['restaurant_id'], filter: { user_created: { _eq: '$CURRENT_USER' } } })); const ids = result.map((item: any) => item.restaurant_id); if (ids.length > 0) { setBookmarkedIds(ids); localStorage.setItem('gourmet-map-bookmarks', JSON.stringify(ids)); } } catch (e) {} };
 
-  // グローバル関数
+  // --- 6. グローバル関数 ---
   useEffect(() => {
     if (!isClient) return;
     (window as any).toggleBookmark = async (shopId: string) => {
@@ -283,7 +278,6 @@ export default function Home() {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
       <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: 'white', padding: 10 }}>
-        {/* コントロールパネル (W9と同じ) */}
         <div style={{ paddingBottom: '10px', borderBottom: '1px solid #eee' }}>
           {currentUser ? (
             <div style={{fontSize: '12px'}}>
