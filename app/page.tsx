@@ -6,7 +6,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { createDirectus, rest, authentication, readMe, readItems, createItem, logout } from '@directus/sdk';
 
 // 設定
-const DIRECTUS_URL = 'http://127.0.0.1:8055';
+// 環境変数があればそれを使い、なければローカル(127.0.0.1)を使う
+const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8055';
 const client = createDirectus(DIRECTUS_URL)
   .with(authentication('json')) // JSONモード
   .with(rest());
@@ -296,11 +297,17 @@ export default function Home() {
           <button onClick={() => setLanguage('ja')} style={{ flex: 1, padding: '5px', background: language === 'ja' ? '#333' : '#fff', color: language === 'ja' ? '#fff' : '#333', border: 'none', cursor: 'pointer' }}>JA</button>
           <button onClick={() => setLanguage('en')} style={{ flex: 1, padding: '5px', background: language === 'en' ? '#333' : '#fff', color: language === 'en' ? '#fff' : '#333', border: 'none', cursor: 'pointer' }}>EN</button>
         </div>
-        <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} style={{ padding: '5px', fontSize: '14px', width: '100%' }}>
+{/* カテゴリ選択（言語切り替え対応版） */}
+        <select 
+          value={selectedCategory} 
+          onChange={(e) => setSelectedCategory(e.target.value)} 
+          style={{ padding: '5px', fontSize: '14px', width: '100%' }}
+        >
           <option value="すべて">{language === 'en' ? 'All Categories' : 'すべてのカテゴリ'}</option>
-          <option value="ラーメン">Ramen (ラーメン)</option>
-          <option value="カフェ">Cafe (カフェ)</option>
-          <option value="レストラン">Restaurant (レストラン)</option>
+          {/* ↓ ここで言語を判定して表示を変えています */}
+          <option value="ラーメン">{language === 'en' ? 'Ramen' : 'ラーメン'}</option>
+          <option value="カフェ">{language === 'en' ? 'Cafe' : 'カフェ'}</option>
+          <option value="レストラン">{language === 'en' ? 'Restaurant' : 'レストラン'}</option>
         </select>
         <label style={{ display: 'flex', alignItems: 'center', fontSize: '14px', cursor: 'pointer' }}>
           <input type="checkbox" checked={showOnlyBookmarks} onChange={(e) => setShowOnlyBookmarks(e.target.checked)} style={{ marginRight: '5px' }} />
