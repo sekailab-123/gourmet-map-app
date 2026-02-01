@@ -39,24 +39,3 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# Database
-*.db
-*.sqlite
-data.db
-
-# Uploads
-uploads/
-*.avif
-
-# CMS
-gourmet-cms/node_modules/
-gourmet-cms/uploads/
-gourmet-cms/.env
-gourmet-cms/data.db
-gourmet-cms/backup_v1/
-
-# Map App
-gourmet-map-app/node_modules/
-gourmet-map-app/.next/
-gourmet-map-app/.env.local
