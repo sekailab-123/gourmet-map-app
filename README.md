@@ -1558,13 +1558,163 @@ useEffect(() => {
 
 ---
 
+## 🌿 ブランチ戦略とGitワークフロー
+
+このプロジェクトでは、複数人での開発を想定したブランチ戦略を採用しています。
+
+### ブランチの役割
+
+```
+main (本番環境)
+  ├── 常に安定したコード
+  ├── 本番環境にデプロイされるブランチ
+  └── 直接コミット禁止（Pull Requestのみ）
+
+develop (開発統合)
+  ├── 日々の開発はここに統合
+  ├── 機能ブランチのマージ先
+  └── テスト済みの機能がまとまったらmainへマージ
+
+feature/* (機能開発)
+  ├── 新機能開発用の個別ブランチ
+  ├── developから分岐
+  └── 完了後はdevelopにマージ
+```
+
+### 開発フロー
+
+#### 1. 新機能を開発する場合
+
+```bash
+# 1. developブランチを最新にする
+git checkout develop
+git pull origin develop
+
+# 2. 機能ブランチを作成（例: ブックマーク一覧機能）
+git checkout -b feature/bookmark-list
+
+# 3. 開発作業（コーディング、テスト）
+# ファイルを編集...
+
+# 4. コミット
+git add .
+git commit -m "feat: ブックマーク一覧ページを追加"
+
+# 5. リモートにプッシュ
+git push -u origin feature/bookmark-list
+
+# 6. GitHubでPull Requestを作成
+# develop ← feature/bookmark-list
+```
+
+#### 2. Pull Requestのレビュー・マージ
+
+```bash
+# レビュー担当者が確認後、GitHubでマージ
+
+# マージ後、ローカルのdevelopを更新
+git checkout develop
+git pull origin develop
+
+# 不要になったブランチを削除
+git branch -d feature/bookmark-list
+git push origin --delete feature/bookmark-list
+```
+
+#### 3. 本番リリース（developからmainへ）
+
+```bash
+# 1. developが十分にテストされたら
+git checkout main
+git pull origin main
+
+# 2. developをmainにマージ
+git merge develop
+
+# 3. タグを付ける（バージョン管理）
+git tag -a v1.0.0 -m "Release version 1.0.0"
+
+# 4. プッシュ
+git push origin main
+git push origin v1.0.0
+
+# → Vercelが自動的に本番デプロイ
+```
+
+### ブランチ命名規則
+
+```
+feature/機能名     新機能開発
+  例: feature/search-filter
+      feature/user-profile
+
+bugfix/バグ名      バグ修正
+  例: bugfix/map-crash
+      bugfix/login-error
+
+hotfix/緊急修正名  本番の緊急修正（mainから直接分岐）
+  例: hotfix/security-patch
+      hotfix/critical-bug
+```
+
+### コミットメッセージ規約
+
+```
+feat: 新機能
+  例: feat: カテゴリフィルタ機能を追加
+
+fix: バグ修正
+  例: fix: ログイン時のエラーを修正
+
+docs: ドキュメント変更
+  例: docs: READMEにAPI仕様を追記
+
+style: コードスタイル変更（動作に影響なし）
+  例: style: インデントを修正
+
+refactor: リファクタリング
+  例: refactor: Mapコンポーネントを分離
+
+test: テスト追加・修正
+  例: test: ブックマーク機能のテストを追加
+
+chore: ビルド設定など
+  例: chore: パッケージを更新
+```
+
+### Pull Request テンプレート
+
+Pull Requestを作成する際は、以下の内容を記載してください：
+
+```markdown
+## 概要
+何を変更したか簡潔に説明
+
+## 変更内容
+- [ ] 機能A を追加
+- [ ] 機能B を修正
+
+## テスト
+- [ ] ローカルで動作確認済み
+- [ ] ビルドエラーなし
+
+## スクリーンショット
+（UIの変更がある場合）
+
+## 関連Issue
+#123
+```
+
+---
+
 ## 📞 サポート・連絡先
 
 プロジェクトに関する質問や問題は、以下の方法で対応してください:
 
 1. **GitHub Issues**: バグ報告や機能要望
-2. **チーム内Slack**: 緊急の問題や相談
-3. **ドキュメント更新**: この`README.md`を随時更新してください
+2. **Pull Request**: コードレビューと機能追加
+3. **チーム内Slack**: 緊急の問題や相談
+4. **ドキュメント更新**: この`README.md`を随時更新してください
 
 ---
 
